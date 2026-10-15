@@ -344,7 +344,7 @@ func TestStreamEventRefusals(t *testing.T) {
 		{`data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"content_filter"}}}`, eventRefusal},
 		{`data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`, eventContent},
 		{`data: {"type":"response.completed","response":{"status":"completed"}}`, eventContent},
-		{`data: {"type":"error","error":{"code":"content_filter","message":"filtered"}}`, eventRefusal},
+		{`data: {"type":"error","error":{"code":"content_filter","message":"filtered"}}`, eventRefusalError},
 		{`data: {"candidates":[{"content":{"parts":[]},"finishReason":"SAFETY"}]}`, eventRefusal},
 		{`data: {"candidates":[{"content":{"parts":[{"text":"hi"}]},"finishReason":"SAFETY"}]}`, eventContent},
 		{`data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}`, eventContent},

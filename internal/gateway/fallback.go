@@ -1699,13 +1699,16 @@ func (h *holdWriter) scan() {
 			}
 			h.thinking = true
 			continue
-		case eventError:
+		case eventError, eventRefusalError:
 			h.failure, h.failMsg = status, msg
+			h.refused = kind == eventRefusalError
 			if h.stop != nil {
 				h.stop()
 			}
 			return
 		case eventRefusal:
+			// A refusal's stop marker can still have usage and the
+			// protocol's terminator after it; an error above cannot.
 			h.failure, h.failMsg, h.refused = status, msg, true
 			return
 		}
@@ -1842,9 +1845,7 @@ func (h *holdWriter) sent(b []byte) {
 // is not (#248). What is read is kept only as far as the event it is in is
 // whole, as a write may end in the middle of one.
 func (h *holdWriter) refusalAfter(b []byte) {
-	if len(h.after) == 0 && !mayRefuse(b) {
-		return // most of a reply's events are content
-	}
+	// Even the error's name may cross writes; screen whole events below.
 	h.after = append(h.after, b...)
 	for {
 		end := eventEnd(h.after)
@@ -1854,7 +1855,7 @@ func (h *holdWriter) refusalAfter(b []byte) {
 		ev, rest := h.after[:end], h.after[end:]
 		h.after = rest
 		if mayRefuse(ev) {
-			if kind, _, _ := streamEvent(ev); kind == eventRefusal {
+			if kind, _, _ := streamEvent(ev); kind == eventRefusal || kind == eventRefusalError {
 				h.refusedAfter = true
 			}
 		}
@@ -1880,7 +1881,7 @@ func mayRefuse(ev []byte) bool {
 // with carry: an error's code, a stop reason's, a finish reason's, a
 // Gemini block reason's.
 var refusalSays = [][]byte{
-	[]byte(`"error"`), []byte(`failed`), []byte(`refusal`), []byte(`filter`),
+	[]byte(`error`), []byte(`failed`), []byte(`refusal`), []byte(`filter`),
 	[]byte(`incomplete`), []byte(`finishReason`), []byte(`blockReason`),
 }
 
@@ -2210,9 +2211,10 @@ const (
 	eventContent = iota
 	eventLead    // what comes before a reply's content: a start, a ping
 	eventError
-	eventRefusal   // the reply's end, by the vendor's safety filter
-	eventBuffering // a lead saying the reply is held back for safety checks
-	eventThinking  // reasoning, before anything is said: a refusal may yet end it
+	eventRefusal      // the reply's end, by the vendor's safety filter
+	eventRefusalError // the filter's error event: canceled like eventError
+	eventBuffering    // a lead saying the reply is held back for safety checks
+	eventThinking     // reasoning, before anything is said: a refusal may yet end it
 )
 
 // refusedStatus is what a refusal with nothing said is answered as: a
@@ -2411,16 +2413,16 @@ func streamEvent(ev []byte) (kind, status int, msg string) {
 		if len(raw) == 0 || string(raw) == "null" {
 			// Responses' own error event: its code and message on it
 			if note, ok := policyRefusal(data); ok {
-				return eventRefusal, refusedStatus, note
+				return eventRefusalError, refusedStatus, note
 			}
 		}
 		if note, ok := policyRefusal(raw); ok {
-			return eventRefusal, refusedStatus, note
+			return eventRefusalError, refusedStatus, note
 		}
 		return errOf(raw)
 	case len(v.Error) > 0 && string(v.Error) != "null":
 		if note, ok := policyRefusal(v.Error); ok {
-			return eventRefusal, refusedStatus, note
+			return eventRefusalError, refusedStatus, note
 		}
 		return errOf(v.Error)
 	// reasoning, before a word of the reply: held with it, and longer, for
@@ -2675,6 +2677,10 @@ func policyRefusal(raw []byte) (string, bool) {
 		return note(c)
 	case c == "invalid_prompt" && flaggedWords.MatchString(msg):
 		return note(c)
+	case strings.TrimSpace(msg) == "The request was rejected because it was considered high risk":
+		// An error's exact message, not a search through an assistant's
+		// text: a normal answer may quote the vendor's words.
+		return note("high risk")
 	}
 	return "", false
 }
