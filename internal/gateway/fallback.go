@@ -1350,6 +1350,12 @@ type holdWriter struct {
 	// thinkingShown: the model's vendor never refuses after reasoning
 	// (refusesAfterThinking), so its reasoning goes through as it comes
 	thinkingShown bool
+	// These official backends can refuse after reasoning. While another
+	// candidate remains, hold that reasoning within the existing bounds;
+	// MiMo's fixed pre-filter text is held only while it still matches.
+	safetyHold    bool
+	mimoText      bool
+	refusalPrefix string
 
 	ended bool   // the stream's last event was written: the reply is whole
 	tail  []byte // the end of the last write, for a marker split across two
@@ -1679,6 +1685,10 @@ func refusesAfterThinking(model string) bool {
 // scan reads the held stream's events so far: an error before any content
 // fails it; content, or waiting too long for it, lets it through.
 func (h *holdWriter) scan() {
+	if h.safetyHoldExpired() {
+		h.flow()
+		return
+	}
 	for {
 		rest := h.held.Bytes()[h.scanned:]
 		end := eventEnd(rest)
@@ -1711,6 +1721,10 @@ func (h *holdWriter) scan() {
 			// protocol's terminator after it; an error above cannot.
 			h.failure, h.failMsg, h.refused = status, msg, true
 			return
+		case eventContent:
+			if h.mimoText && h.holdMiMoText(rest[:end]) {
+				continue
+			}
 		}
 		h.flow()
 		return
@@ -2155,6 +2169,10 @@ func (h *holdWriter) keepQuiet() {
 	if h.slow || h.ended || h.alive == nil || h.alive.proto == provider.Gemini || h.ctx != nil && h.ctx.Err() != nil {
 		return
 	}
+	if !h.passing && h.failure == 0 && h.safetyHoldExpired() {
+		h.flow()
+		return
+	}
 	if !h.heard.IsZero() && time.Since(h.heard) >= keepaliveLongest {
 		return // a stream stuck this long is left for a timeout to end
 	}
@@ -2453,7 +2471,7 @@ func streamEvent(ev []byte) (kind, status int, msg string) {
 			StopReason  string          `json:"stop_reason"`
 			StopDetails json.RawMessage `json:"stop_details"`
 		}
-		if json.Unmarshal(v.Delta, &d) == nil && d.StopReason == "refusal" {
+		if json.Unmarshal(v.Delta, &d) == nil && stopFromAnthropic(d.StopReason) == "filter" {
 			return eventRefusal, refusedStatus, refusedDetail(d.StopReason, d.StopDetails)
 		}
 	case typ == "response.incomplete" || typ == "response.completed" && v.Response.Status == "incomplete":
@@ -2677,6 +2695,10 @@ func policyRefusal(raw []byte) (string, bool) {
 		return note(c)
 	case c == "invalid_prompt" && flaggedWords.MatchString(msg):
 		return note(c)
+	case zhipuSafetyRefusal(code, msg):
+		// Zhipu's documented safety error, with its fixed wording so
+		// another vendor's unrelated numeric code is not a refusal.
+		return note("content_filter")
 	case strings.TrimSpace(msg) == "The request was rejected because it was considered high risk":
 		// An error's exact message, not a search through an assistant's
 		// text: a normal answer may quote the vendor's words.
@@ -2755,7 +2777,7 @@ func refusedReply(b []byte) (string, bool) {
 	none := func(ps []streamPart) bool {
 		return !slices.ContainsFunc(ps, streamPart.said)
 	}
-	if r, ok := filterReasons[v.StopReason]; ok && r == "refusal" && none(v.Content) {
+	if r, ok := filterReasons[v.StopReason]; ok && stopFromAnthropic(v.StopReason) == "filter" && none(v.Content) {
 		return refusedDetail(r, v.StopDetails), true
 	}
 	for _, c := range v.Choices {

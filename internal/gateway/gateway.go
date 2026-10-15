@@ -2103,6 +2103,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		// once (iTianbao on X). Gemini's stays held on the last one too,
 		// for a reply that only reasoned to be asked again (#667).
 		hw.thinkingShown = !refusesAfterThinking(c.model) || last && modelFamily(c.model) != ""
+		if host := vendorRefusalHost(c.p); !last && host != "" {
+			hw.thinkingShown, hw.safetyHold = false, true
+			hw.mimoText = host == "token-plan-cn.xiaomimimo.com"
+		}
 		hw.ctx, hw.alive, hw.streams = r.Context(), kept, streams
 		if streams && !settings.Load().NoLoopGuard {
 			// a reply stuck in a loop is ended, not let run to its limit

@@ -13,8 +13,8 @@ import (
 )
 
 // The reported message is literal; the envelopes below exercise the API
-// contracts, not a captured MiMo or MiniMax response. In particular, there
-// is no evidence here that a vendor sent this as an assistant text delta.
+// contracts, not a captured MiMo or MiniMax response. These error fixtures
+// are separate from the assistant-text case in vendor_refusal_test.go.
 const highRiskMessage = "The request was rejected because it was considered high risk"
 
 func TestHighRiskErrorMessage(t *testing.T) {
