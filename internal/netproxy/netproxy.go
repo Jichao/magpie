@@ -113,9 +113,8 @@ func forChoice(c string) (*url.URL, error) {
 }
 
 // HTTP1 says a request to u goes over HTTP/1.1 only, whatever its
-// transport offers. internal/provider sets it to the ChatGPT backend's
-// host, which Codex itself speaks HTTP/1.1 to; nil leaves every request to
-// its transport.
+// transport offers. internal/provider names the backends needing that
+// compatibility path; nil leaves every request to its transport.
 var HTTP1 func(u *url.URL) bool
 
 // Dispatch is a RoundTripper sending a request through base, unless its

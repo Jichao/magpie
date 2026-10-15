@@ -14,7 +14,7 @@ var upstreamTLS *tls.Config
 
 // upstreamTransport is the gateway's transport to the vendors: a provider
 // with a proxy of its own is sent through a transport kept for that proxy
-// (#237), and the ChatGPT backend over HTTP/1.1 (netproxy.HTTP1). Every
+// (#237), and backends named by netproxy.HTTP1 over HTTP/1.1. Every
 // other vendor is spoken HTTP/2 to wherever it offers it. A request that
 // finds its kept-alive connection dropped is sent again on a new one
 // (replayable).

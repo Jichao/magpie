@@ -388,8 +388,8 @@ func New() *Server {
 	redact.SetKeyPath(filepath.Join(settings.Dir(), "redact.key"))
 	return &Server{
 		// a request counted against a MaxRPM waits for room in its minute
-		// first (rpm.go); the ChatGPT backend is spoken to over HTTP/1.1
-		// (netproxy.HTTP1, which provider/codex_http1.go sets)
+		// first (rpm.go); backend HTTP/1.1 compatibility is selected by
+		// netproxy.HTTP1, which provider/upstream_http1.go sets
 		client:       &http.Client{Transport: rpmTransport{upstreamTransport()}},
 		unfit:        make(map[string]bool),
 		subscription: newSubscriptionBridge(),
