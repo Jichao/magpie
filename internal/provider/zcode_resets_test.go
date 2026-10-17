@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -137,7 +139,7 @@ func TestUseZcodeReset(t *testing.T) {
 	if id, _ := body["requestId"].(string); id == "" {
 		t.Fatalf("no request id: %v", body)
 	}
-	if used := ResetsUsed("me@example.com"); len(used) != 1 || used[0].Why != ResetUsedByHand {
+	if used := ResetsUsed("zcode", "me@example.com"); len(used) != 1 || used[0].Why != ResetUsedByHand {
 		t.Fatalf("uses: %+v", used)
 	}
 }
@@ -301,7 +303,7 @@ func TestAutoUseZcodeReset(t *testing.T) {
 	if body := <-f.asked; body["resetType"] != "FIVE_HOUR" || body["recordId"] != float64(7) {
 		t.Fatalf("asked %v", body)
 	}
-	if used := ResetsUsed("me@example.com"); len(used) != 1 || used[0].Why != ResetUsedWeek {
+	if used := ResetsUsed("zcode", "me@example.com"); len(used) != 1 || used[0].Why != ResetUsedWeek {
 		t.Fatalf("uses: %+v", used)
 	}
 
@@ -352,7 +354,7 @@ func TestSpendExpiringZcodeResets(t *testing.T) {
 		if body["recordId"] != float64(7) {
 			t.Fatalf("asked %v", body)
 		}
-		if used := ResetsUsed("me@example.com"); len(used) != 1 || used[0].Why != ResetUsedExpiring {
+		if used := ResetsUsed("zcode", "me@example.com"); len(used) != 1 || used[0].Why != ResetUsedExpiring {
 			t.Fatalf("uses: %+v", used)
 		}
 	default:
@@ -399,5 +401,79 @@ func TestSpendExpiringZcodeResetsOutOfPeak(t *testing.T) {
 		if h := now.Hour(); h < 14 && now.Add(3*time.Hour).In(zhipuZone).Hour() >= 14 && now.Add(3*time.Hour).In(zhipuZone).Hour() < 18 {
 			t.Fatalf("a card running out inside the peak, now before it, was not spent at its start")
 		}
+	}
+}
+
+// A Codex account and a ZCode account can share a user, and neither
+// spends on the other's say: a card the ZCode account spent by itself
+// holds off neither the Codex account's auto-use nor the other way
+// round, and each agent's uses sit in its own history — though its own
+// say of what it spent still holds off its own second one.
+func TestZcodeAndCodexShareAnAccount(t *testing.T) {
+	f := fakeZcodeOf(t)
+	f.used, f.used2 = 100, 10 // the five hours used up, the week not
+	fakeZcodeLogin(t, f)
+	resetAutoResetState(t)
+	if err := SetZcodeAutoReset("me@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCodexAutoReset("me@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	consumed := fakeWeekUsedUp(t) // ChatGPT with the same user's week used up
+	if out, err := AutoUseZcodeReset(context.Background(), ""); err != nil || out.Code != "reset" {
+		t.Fatalf("the ZCode card: %+v %v", out, err)
+	}
+	if out, err := AutoUseCodexReset(context.Background(), "me@example.com"); err != nil || out.Code != "reset" {
+		t.Fatalf("the Codex reset, the same user: %+v %v", out, err)
+	}
+	if consumed.Load() != 1 {
+		t.Fatalf("consumed %d Codex resets, want 1", consumed.Load())
+	}
+	if f.used_ != 1 {
+		t.Fatalf("spent %d ZCode cards, want 1", f.used_)
+	}
+	z, c := ResetsUsed("zcode", "me@example.com"), ResetsUsed("codex", "me@example.com")
+	if len(z) != 1 || z[0].Why != ResetUsedWeek || len(c) != 1 || c[0].Why != ResetUsedWeek {
+		t.Fatalf("uses: zcode %+v, codex %+v", z, c)
+	}
+	// its own say of the window still holds off its own second one
+	if out, err := AutoUseZcodeReset(context.Background(), ""); err != nil || out.Code != "" {
+		t.Fatalf("a second ZCode card for the same window: %+v %v", out, err)
+	}
+}
+
+// A codex-autoreset.json kept before the agent was in its keys — the
+// ledger was Codex's alone then — still holds off the Codex account it
+// was spent for, and not a ZCode account sharing its user.
+func TestAutoResetLegacyKeysAreCodex(t *testing.T) {
+	f := fakeZcodeOf(t)
+	f.used, f.used2 = 100, 10
+	fakeZcodeLogin(t, f)
+	resetAutoResetState(t)
+	if err := SetZcodeAutoReset("me@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCodexAutoReset("me@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	p := autoReset.where()
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	b, _ := json.Marshal(map[string]autoResetSpent{"me@example.com": {Until: time.Now().Add(72 * time.Hour), At: time.Now().Add(-time.Hour), Out: ResetOutcome{Code: "reset", Windows: 2}}})
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	consumed := fakeWeekUsedUp(t)
+	if out, err := AutoUseCodexReset(context.Background(), "me@example.com"); err != nil || out.Code != "" {
+		t.Fatalf("the Codex account, held off by what its file kept: %+v %v", out, err)
+	}
+	if consumed.Load() != 0 {
+		t.Fatalf("consumed %d Codex resets, want none", consumed.Load())
+	}
+	if out, err := AutoUseZcodeReset(context.Background(), ""); err != nil || out.Code != "reset" {
+		t.Fatalf("the ZCode account, sharing the user: %+v %v", out, err)
+	}
+	if f.used_ != 1 {
+		t.Fatalf("spent %d ZCode cards, want 1", f.used_)
 	}
 }

@@ -6,7 +6,9 @@ package provider
 // again, one the week — and spends one at /api/biz/customer-package-reset/use,
 // told the card's own record id and grant type and a fresh request id,
 // as bigmodel.cn's usage page asks it. The one that runs out first is
-// spent, so none that lasts longer goes before it.
+// spent, so none that lasts longer goes before it. The ledgers of a spend
+// keep the agent with the account (resetsLedgerKey), for a Codex account
+// can share the user and neither may spend on the other's say.
 //
 // A window used up spends the card of that window, the week's before the
 // five hours' where both are: the five hours do pass on their own, as
@@ -351,7 +353,7 @@ func UseZcodeReset(ctx context.Context, user, window string) (ResetOutcome, erro
 	}
 	StaleAllowance("zcode", l.User)
 	renewedNow("zcode", l.User)
-	noteResetUsed(l.User, ResetUsedByHand, out)
+	noteResetUsed("zcode", l.User, ResetUsedByHand, out)
 	return out, nil
 }
 
@@ -374,7 +376,7 @@ func AutoUseZcodeReset(ctx context.Context, user string) (ResetOutcome, error) {
 		return ResetOutcome{}, nil
 	}
 	var card ResetCard
-	return autoReset.use(user, func(now time.Time) (*time.Time, bool, error) {
+	return autoReset.use("zcode", user, func(now time.Time) (*time.Time, bool, error) {
 		l, ok := zcodeLoginUser(user)
 		if !ok {
 			return nil, false, fmt.Errorf("no ZCode account %q", user)
@@ -398,7 +400,7 @@ func AutoUseZcodeReset(ctx context.Context, user string) (ResetOutcome, error) {
 		}
 		StaleAllowance("zcode", l.User)
 		renewedNow("zcode", l.User)
-		noteResetUsed(l.User, ResetUsedWeek, out)
+		noteResetUsed("zcode", l.User, ResetUsedWeek, out)
 		return out, nil
 	})
 }
@@ -417,7 +419,7 @@ func SpendExpiringZcodeResets(ctx context.Context) {
 		if !atBoth {
 			continue // kept to a window used up, as Codex's are (#2078)
 		}
-		out, err := expiring.check(user, time.Now(), func() ([]QuotaWindow, *ResetCredits, error) {
+		out, err := expiring.check("zcode", user, time.Now(), func() ([]QuotaWindow, *ResetCredits, error) {
 			l, ok := zcodeLoginUser(user)
 			if !ok {
 				return nil, nil, fmt.Errorf("no ZCode account %q", user)
@@ -441,7 +443,7 @@ func SpendExpiringZcodeResets(ctx context.Context) {
 			}
 			StaleAllowance("zcode", l.User)
 			renewedNow("zcode", l.User)
-			noteResetUsed(l.User, ResetUsedExpiring, out)
+			noteResetUsed("zcode", l.User, ResetUsedExpiring, out)
 			return out, nil
 		}, peak)
 		switch {

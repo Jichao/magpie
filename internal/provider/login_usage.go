@@ -155,10 +155,11 @@ var noteHistoryWrite = noteQuotaHistory
 // rate limited, and two readings a moment apart told an account two ways.
 func loginReading(ctx context.Context, l Login) loginUsageEntry {
 	e := cachedLoginReading(ctx, l)
-	if l.Agent == "codex" {
-		// what magpie spent of its resets, as of now: a reading kept from
+	if l.Agent == "codex" || l.Agent == "zcode" {
+		// what magpie spent of its resets — a Codex account's rate-limit
+		// one, a ZCode account's card — as of now: a reading kept from
 		// before one was spent still says it was
-		used := ResetsUsed(l.User)
+		used := ResetsUsed(l.Agent, l.User)
 		e.q.ResetsUsed, e.read.ResetsUsed = used, used
 	}
 	return e

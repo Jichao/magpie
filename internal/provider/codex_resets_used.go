@@ -1,13 +1,14 @@
 package provider
 
-// What magpie spent of a Codex account's rate-limit resets, kept so the
-// user can see it afterwards (foobra12 on Discord: "magpie会自动使用codex
-// 重置卡吗 我发现刚才好像不小心自动给我使用了一张"). Auto-use spends one
-// in the background — its week used up, or one about to run out — and
-// before this only the gateway's log said so; a reset gone from the card
-// read the same whether magpie spent it, the user did, or it ran out. Each
-// use is kept in codex-resets-used.json, by account, and shown on the
-// account's card and by `magpie quota auto-reset`.
+// What magpie spent of an account's resets — Codex's rate-limit ones, a
+// GLM Coding Plan's cards — kept so the user can see it afterwards
+// (foobra12 on Discord: "magpie会自动使用codex重置卡吗 我发现刚才好像不
+// 小心自动给我使用了一张"). Auto-use spends one in the background — its week
+// used up, or one about to run out — and before this only the gateway's
+// log said so; a reset gone from the card read the same whether magpie
+// spent it, the user did, or it ran out. Each use is kept in
+// codex-resets-used.json, by account with its agent (resetsLedgerKey), and
+// shown on the account's card and by `magpie quota auto-reset`.
 
 import (
 	"encoding/json"
@@ -35,12 +36,35 @@ const (
 	ResetUsedByHand   = "hand"
 )
 
-// ResetUse is one reset magpie spent on an account.
+// ResetUse is one reset magpie spent on an agent's account.
 type ResetUse struct {
+	Agent   string    `json:"agent,omitempty"` // codex or zcode; none is Codex's, kept before the agent was
 	User    string    `json:"user"`
 	At      time.Time `json:"at"`
 	Why     string    `json:"why"`
 	Windows int       `json:"windows,omitempty"` // how many windows started again
+}
+
+// resetsLedgerKey is the account the reset ledgers keep a spend under:
+// the agent with the user, for a Codex account and a ZCode account can
+// share a user and neither may spend on the other's say — one agent's
+// week wouldn't hold off the other's, one agent's spend wouldn't sit in
+// the other's history. An agent but "zcode" is Codex's: the ledgers were
+// Codex's alone before ZCode's cards were spent from them.
+func resetsLedgerKey(agent, user string) string {
+	if agent != "zcode" {
+		agent = "codex"
+	}
+	return agent + ":" + strings.ToLower(strings.TrimSpace(user))
+}
+
+// resetUseAgent is the agent that kept use: none says Codex's, as the
+// uses kept before the agent was in them are.
+func resetUseAgent(u ResetUse) string {
+	if u.Agent == "zcode" {
+		return "zcode"
+	}
+	return "codex"
 }
 
 var (
@@ -76,10 +100,10 @@ func readResetsUsed() ([]ResetUse, error) {
 	return us, nil
 }
 
-// noteResetUsed keeps that a reset of user's was used, for why, when out
-// says one was. A file that doesn't parse is copied aside first, not
-// written over unread.
-func noteResetUsed(user, why string, out ResetOutcome) {
+// noteResetUsed keeps that a reset of agent's account user's was used, for
+// why, when out says one was. A file that doesn't parse is copied aside
+// first, not written over unread.
+func noteResetUsed(agent, user, why string, out ResetOutcome) {
 	if user == "" || out.Code != "reset" {
 		return
 	}
@@ -95,7 +119,7 @@ func noteResetUsed(user, why string, out ResetOutcome) {
 	}
 	now := time.Now().UTC()
 	us = slices.DeleteFunc(us, func(u ResetUse) bool { return now.Sub(u.At) > resetsUsedKeep })
-	us = append(us, ResetUse{User: user, At: now, Why: why, Windows: out.Windows})
+	us = append(us, ResetUse{Agent: agent, User: user, At: now, Why: why, Windows: out.Windows})
 	if len(us) > resetsUsedMost {
 		us = us[len(us)-resetsUsedMost:]
 	}
@@ -104,10 +128,10 @@ func noteResetUsed(user, why string, out ResetOutcome) {
 	_ = steady.WriteFile(resetsUsedPath(), append(b, '\n'), 0o600)
 }
 
-// ResetsUsed is what magpie spent of the Codex account user's resets,
+// ResetsUsed is what magpie spent of agent's account user's resets,
 // newest first, resetsUsedShown at most; nil when none, or when the file
 // can't be read.
-func ResetsUsed(user string) []ResetUse {
+func ResetsUsed(agent, user string) []ResetUse {
 	if user == "" {
 		return nil
 	}
@@ -117,7 +141,7 @@ func ResetsUsed(user string) []ResetUse {
 	}
 	var out []ResetUse
 	for i := len(us) - 1; i >= 0 && len(out) < resetsUsedShown; i-- {
-		if strings.EqualFold(us[i].User, user) {
+		if strings.EqualFold(us[i].User, user) && resetUseAgent(us[i]) == agent {
 			out = append(out, us[i])
 		}
 	}

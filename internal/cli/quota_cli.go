@@ -340,11 +340,11 @@ func autoResetSay(user string) string {
 	return "uses its resets only when told to"
 }
 
-// printResetsUsed lists the resets of user's magpie spent, newest first,
-// and why: so a reset gone from the account can be told apart from one it
-// ran out of or the user spent elsewhere.
+// printResetsUsed lists the resets of the Codex account user's magpie
+// spent, newest first, and why: so a reset gone from the account can be
+// told apart from one it ran out of or the user spent elsewhere.
 func printResetsUsed(user string) {
-	used := provider.ResetsUsed(user)
+	used := provider.ResetsUsed("codex", user)
 	if len(used) == 0 {
 		fmt.Println(muted.Render("magpie hasn't used any of its resets in the last 90 days"))
 		return

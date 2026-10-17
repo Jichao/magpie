@@ -19,7 +19,6 @@ package provider
 import (
 	"context"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -52,20 +51,21 @@ var expiring = expiringResets{next: map[string]time.Time{}, until: map[string]ti
 
 type expiringResets struct {
 	sync.Mutex
-	next  map[string]time.Time // by account, when to read it again
+	next  map[string]time.Time // by account (its agent with the user, resetsLedgerKey), when to read it again
 	until map[string]time.Time // by account, when its soonest reset runs out, as last read
 }
 
-// check spends one of user's resets, if its windows have been used, when
-// the soonest of them runs out within resetExpiryLead or the account is
-// held up past then (expiringResetSpent); look reads its windows and
-// resets, spend spends the one that runs out first. peak keeps the spend
-// out of the Zhipu peak (zhipuSpentAt); Codex's own accounts pass false.
-// Code is "" when none was tried. now is wall-clock time: a Mac asleep
-// doesn't count it on the monotonic clock, and the reset runs out by the
-// wall clock.
-func (e *expiringResets) check(user string, now time.Time, look func() ([]QuotaWindow, *ResetCredits, error), spend func() (ResetOutcome, error), peak bool) (ResetOutcome, error) {
-	key := strings.ToLower(user)
+// check spends one of agent's account user's resets, if its windows have
+// been used, when the soonest of them runs out within resetExpiryLead or
+// the account is held up past then (expiringResetSpent); look reads its
+// windows and resets, spend spends the one that runs out first. The agent
+// keeps the account apart from another agent's sharing the user, whose
+// next look would hold this one back. peak keeps the spend out of the
+// Zhipu peak (zhipuSpentAt); Codex's own accounts pass false. Code is ""
+// when none was tried. now is wall-clock time: a Mac asleep doesn't count
+// it on the monotonic clock, and the reset runs out by the wall clock.
+func (e *expiringResets) check(agent, user string, now time.Time, look func() ([]QuotaWindow, *ResetCredits, error), spend func() (ResetOutcome, error), peak bool) (ResetOutcome, error) {
+	key := resetsLedgerKey(agent, user)
 	now = now.Round(0)
 	e.Lock()
 	defer e.Unlock()
@@ -201,7 +201,7 @@ func SpendExpiringCodexResets(ctx context.Context) {
 			continue // kept to its week used up (#2078)
 		}
 		var who string
-		out, err := expiring.check(user, time.Now(), func() ([]QuotaWindow, *ResetCredits, error) {
+		out, err := expiring.check("codex", user, time.Now(), func() ([]QuotaWindow, *ResetCredits, error) {
 			var tok, accountID string
 			var err error
 			who, tok, accountID, err = codexUserToken(ViaLogin(ctx, "codex", user), user)

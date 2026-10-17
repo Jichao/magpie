@@ -177,9 +177,11 @@ type autoResets struct {
 	sync.Mutex
 	file string // its name in magpie's folder
 	path string // the file read, read again when that changes (a new HOME)
-	// spent: by account, the end of the week a reset was spent in, when,
-	// and what spending it did — for the requests that found the same week
-	// used up while it was spent, which go through on it too
+	// spent: by account (its agent with the user — a Codex account and a
+	// ZCode one can share a user, resetsLedgerKey), the end of the week a
+	// reset was spent in, when, and what spending it did — for the requests
+	// that found the same week used up while it was spent, which go through
+	// on it too
 	spent map[string]autoResetSpent
 	// next: by account, when to look again after a look that spent none
 	next map[string]time.Time
@@ -214,7 +216,7 @@ func AutoUseCodexReset(ctx context.Context, user string) (ResetOutcome, error) {
 		return ResetOutcome{}, nil
 	}
 	var who string
-	return autoReset.use(user, func(now time.Time) (*time.Time, bool, error) {
+	return autoReset.use("codex", user, func(now time.Time) (*time.Time, bool, error) {
 		var tok, accountID string
 		var err error
 		who, tok, accountID, err = codexUserToken(ViaLogin(ctx, "codex", user), user)
@@ -229,11 +231,12 @@ func AutoUseCodexReset(ctx context.Context, user string) (ResetOutcome, error) {
 	}, func() (ResetOutcome, error) { return useCodexReset(ctx, who, ResetUsedWeek) })
 }
 
-// use spends one of user's resets by itself if look finds its week used
-// up (and when that week ends) and a reset held, and none was spent by
-// itself in that week yet; spend spends it.
-func (a *autoResets) use(user string, look func(now time.Time) (week *time.Time, held bool, err error), spend func() (ResetOutcome, error)) (ResetOutcome, error) {
-	key := strings.ToLower(user)
+// use spends one of agent's account user's resets by itself if look finds
+// its week used up (and when that week ends) and a reset held, and none
+// was spent by itself in that week yet; spend spends it. The agent keeps
+// the account apart from another agent's sharing the user.
+func (a *autoResets) use(agent, user string, look func(now time.Time) (week *time.Time, held bool, err error), spend func() (ResetOutcome, error)) (ResetOutcome, error) {
+	key := resetsLedgerKey(agent, user)
 	asked := time.Now()
 	a.Lock() // one look at a time: those waiting take what it did
 	defer a.Unlock()
@@ -284,7 +287,9 @@ func weekUsedUp(windows []QuotaWindow, now time.Time) *time.Time {
 	return nil
 }
 
-// load reads what was spent, once; a.Lock is held. A file that can't be
+// load reads what was spent, once; a.Lock is held. An account kept
+// without its agent — the file's first shape, when the ledger was Codex's
+// alone — reads as Codex's. A file that can't be
 // read or doesn't parse is unknown, never none: read as none, the week's
 // auto-use would spend a second reset (#2017). What was spent is then
 // taken from codex-resets-used.json, which keeps every reset used for a
@@ -308,6 +313,13 @@ func (a *autoResets) load() {
 			if a.spent == nil {
 				a.spent = map[string]autoResetSpent{}
 			}
+			// keys kept before the agent was in them are Codex's
+			for k, s := range a.spent {
+				if k != autoResetAny && !strings.Contains(k, ":") {
+					delete(a.spent, k)
+					a.spent[resetsLedgerKey("codex", k)] = s
+				}
+			}
 			return
 		}
 		aside := a.path + ".bad-" + time.Now().UTC().Format("20060102T150405.000000000")
@@ -328,7 +340,7 @@ func (a *autoResets) load() {
 		log.Printf("%s: %v; %v too, so no Codex account spends a reset by itself until %s", a.path, err, uerr, now.Add(autoResetWeek).Format(time.RFC3339))
 	} else {
 		for _, u := range uses {
-			key := strings.ToLower(u.User)
+			key := resetsLedgerKey(resetUseAgent(u), u.User)
 			if u.Why != ResetUsedWeek || now.Sub(u.At) >= autoResetWeek || a.spent[key].At.After(u.At) {
 				continue
 			}

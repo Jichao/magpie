@@ -148,7 +148,7 @@ func TestAutoResetKeptPastRestart(t *testing.T) {
 	a.Lock()
 	a.path = "" // read afresh
 	a.load()
-	a.spent["me@example.com"] = autoResetSpent{Until: time.Now().Add(72 * time.Hour), At: time.Now().Add(-time.Hour), Out: ResetOutcome{Code: "reset", Windows: 2}}
+	a.spent["codex:me@example.com"] = autoResetSpent{Until: time.Now().Add(72 * time.Hour), At: time.Now().Add(-time.Hour), Out: ResetOutcome{Code: "reset", Windows: 2}}
 	a.save()
 	a.path = "" // as a new magpie would
 	a.Unlock()
@@ -158,7 +158,7 @@ func TestAutoResetKeptPastRestart(t *testing.T) {
 		t.Fatalf("%+v %v", out, err)
 	}
 	a.Lock()
-	_, kept := a.spent["me@example.com"]
+	_, kept := a.spent["codex:me@example.com"]
 	a.Unlock()
 	if !kept {
 		t.Fatal("what was spent was forgotten")
@@ -202,7 +202,7 @@ func TestAutoResetUnreadableKeptAside(t *testing.T) {
 	a.Lock()
 	a.path = "" // as a new magpie would
 	a.load()
-	_, ok := a.spent["me@example.com"]
+	_, ok := a.spent["codex:me@example.com"]
 	a.Unlock()
 	if !ok {
 		t.Fatal("what was spent was forgotten")
@@ -263,8 +263,9 @@ func unreadableAutoReset(t *testing.T) {
 
 // A codex-autoreset.json that can't be read is not "none spent" (#2017):
 // a reset auto-use spent this week, kept in codex-resets-used.json, still
-// holds off a second one the same week, while one from a week ago, or one
-// used by hand, doesn't.
+// holds off a second one the same week, while one from a week ago, one
+// used by hand, and one of a ZCode account's cards under the same user,
+// don't.
 func TestAutoResetUnreadableReadsResetsUsed(t *testing.T) {
 	for name, c := range map[string]struct {
 		uses  []ResetUse
@@ -274,6 +275,7 @@ func TestAutoResetUnreadableReadsResetsUsed(t *testing.T) {
 		"auto-used 8 days ago":  {[]ResetUse{{User: "me@example.com", At: time.Now().Add(-8 * 24 * time.Hour), Why: ResetUsedWeek}}, 1},
 		"used by hand":          {[]ResetUse{{User: "me@example.com", At: time.Now().Add(-time.Hour), Why: ResetUsedByHand}}, 1},
 		"another account's use": {[]ResetUse{{User: "other@example.com", At: time.Now().Add(-time.Hour), Why: ResetUsedWeek}}, 1},
+		"ZCode's own use":       {[]ResetUse{{Agent: "zcode", User: "me@example.com", At: time.Now().Add(-time.Hour), Why: ResetUsedWeek}}, 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			signIn(t)

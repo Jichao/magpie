@@ -54,7 +54,7 @@ func TestResetUsesKept(t *testing.T) {
 	t.Cleanup(func() { CodexBase = oldBase })
 	const who = "me@example.com"
 
-	if got := ResetsUsed(who); len(got) != 0 {
+	if got := ResetsUsed("codex", who); len(got) != 0 {
 		t.Fatalf("none used yet, got %+v", got)
 	}
 	if err := SetCodexAutoReset(who, true); err != nil {
@@ -74,7 +74,7 @@ func TestResetUsesKept(t *testing.T) {
 	if out, err := AutoUseCodexReset(t.Context(), who); err != nil || out.Code != "reset" {
 		t.Fatalf("week used up: %+v %v", out, err)
 	}
-	got := ResetsUsed(who)
+	got := ResetsUsed("codex", who)
 	want := []string{ResetUsedWeek, ResetUsedByHand, ResetUsedExpiring}
 	if len(got) != len(want) {
 		t.Fatalf("kept %+v, want %v", got, want)
@@ -90,7 +90,7 @@ func TestResetUsesKept(t *testing.T) {
 		t.Fatalf("the card's reading has %+v", q.ResetsUsed)
 	}
 	// another account's are its own
-	if other := ResetsUsed("other@example.com"); len(other) != 0 {
+	if other := ResetsUsed("codex", "other@example.com"); len(other) != 0 {
 		t.Fatalf("another account got %+v", other)
 	}
 	// kept on disk: a restart still says it
@@ -102,9 +102,9 @@ func TestResetUsesKept(t *testing.T) {
 // A use that didn't start anything again isn't one: nothing kept.
 func TestResetUseNotKeptWhenNothingSpent(t *testing.T) {
 	signIn(t)
-	noteResetUsed("me@example.com", ResetUsedByHand, ResetOutcome{Code: "nothing_to_reset"})
-	noteResetUsed("me@example.com", ResetUsedByHand, ResetOutcome{Code: "no_credit"})
-	if got := ResetsUsed("me@example.com"); len(got) != 0 {
+	noteResetUsed("codex", "me@example.com", ResetUsedByHand, ResetOutcome{Code: "nothing_to_reset"})
+	noteResetUsed("codex", "me@example.com", ResetUsedByHand, ResetOutcome{Code: "no_credit"})
+	if got := ResetsUsed("codex", "me@example.com"); len(got) != 0 {
 		t.Fatalf("kept %+v", got)
 	}
 }
@@ -119,10 +119,10 @@ func TestResetUsesUnreadableKeptAside(t *testing.T) {
 	if err := os.WriteFile(p, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := ResetsUsed("me@example.com"); got != nil {
+	if got := ResetsUsed("codex", "me@example.com"); got != nil {
 		t.Fatalf("unreadable read as %+v", got)
 	}
-	noteResetUsed("me@example.com", ResetUsedByHand, ResetOutcome{Code: "reset", Windows: 1})
+	noteResetUsed("codex", "me@example.com", ResetUsedByHand, ResetOutcome{Code: "reset", Windows: 1})
 	aside, _ := filepath.Glob(p + ".bad-*")
 	if len(aside) != 1 {
 		t.Fatalf("copied aside: %v", aside)
@@ -130,15 +130,15 @@ func TestResetUsesUnreadableKeptAside(t *testing.T) {
 	if b, _ := os.ReadFile(aside[0]); string(b) != "{not json" {
 		t.Fatalf("aside holds %q", b)
 	}
-	if got := ResetsUsed("me@example.com"); len(got) != 1 {
+	if got := ResetsUsed("codex", "me@example.com"); len(got) != 1 {
 		t.Fatalf("after a use: %+v", got)
 	}
 	// an old one goes on the next write
 	old := []ResetUse{{User: "me@example.com", At: time.Now().Add(-resetsUsedKeep - time.Hour), Why: ResetUsedWeek}}
 	b, _ := json.Marshal(old)
 	os.WriteFile(p, b, 0o600)
-	noteResetUsed("me@example.com", ResetUsedExpiring, ResetOutcome{Code: "reset", Windows: 1})
-	if got := ResetsUsed("me@example.com"); len(got) != 1 || got[0].Why != ResetUsedExpiring {
+	noteResetUsed("codex", "me@example.com", ResetUsedExpiring, ResetOutcome{Code: "reset", Windows: 1})
+	if got := ResetsUsed("codex", "me@example.com"); len(got) != 1 || got[0].Why != ResetUsedExpiring {
 		t.Fatalf("kept %+v", got)
 	}
 }

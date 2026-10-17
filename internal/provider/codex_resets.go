@@ -238,7 +238,7 @@ func useCodexReset(ctx context.Context, user, why string) (ResetOutcome, error) 
 	StaleAllowance("codex", user)
 	if out.Code == "reset" {
 		renewedNow("codex", user)
-		noteResetUsed(user, why, out)
+		noteResetUsed("codex", user, why, out)
 	}
 	subscriptionUsageCache.Lock()
 	subscriptionUsageCache.at = time.Time{}
