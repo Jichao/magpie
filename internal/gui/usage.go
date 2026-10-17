@@ -323,4 +323,30 @@ func usageRoutes(mux *http.ServeMux, w Windows) {
 		}
 		writeJSON(rw, out)
 	})
+	// spends one of a ZCode account's reset cards, asked about first too;
+	// the one that runs out first, of any window
+	mux.HandleFunc("POST /api/usage/zcode-reset", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ User string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		out, err := provider.UseZcodeReset(ctx, in.User, "")
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		if out.Code == "reset" {
+			who := in.User
+			if who == "" {
+				who, _ = provider.ZcodeSignedIn()
+			}
+			wait, done := context.WithTimeout(ctx, 10*time.Second)
+			provider.AwaitAllowance(wait, "zcode", who)
+			done()
+		}
+		writeJSON(rw, out)
+	})
 }

@@ -191,8 +191,8 @@ func resetsCell(r *provider.ResetCredits, agent, user string) string {
 	if r.Until != nil {
 		cell += muted.Render(" until " + provider.ResetClock(*r.Until, time.Now()))
 	}
-	if agent == "codex" {
-		if auto := provider.AutoResetWords(user); auto != "" {
+	if agent == "codex" || agent == "zcode" {
+		if auto := provider.AutoResetWords(agent, user); auto != "" {
 			cell += muted.Render(" · " + auto)
 		}
 	}

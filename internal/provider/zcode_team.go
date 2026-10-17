@@ -349,8 +349,8 @@ func zhipuTeamResets(ctx context.Context, root, auth, base, org, project string)
 
 // zhipuPersonalResets is how many resets a GLM Coding Plan of a person's
 // own holds, as bigmodel.cn's usage page lists them (#1191), asked with
-// the plan's key where its term is (zhipuTerm). Only read: a reset is
-// spent on the vendor's own page, never from magpie.
+// the plan's key where its term is (zhipuTerm). Spent from magpie too
+// now (zcode_resets.go), as on the vendor's page.
 func zhipuPersonalResets(ctx context.Context, root, key string) *ResetCredits {
 	return zhipuResets(ctx, root+"/api/biz/customer-package-reset/list?targetType=PERSONAL", key, nil)
 }
@@ -359,11 +359,14 @@ func zhipuPersonalResets(ctx context.Context, root, key string) *ResetCredits {
 // hours and of the week, of which only those still available count (one
 // run out stays listed a week, available false). nil when the list
 // can't be read, so no count is shown rather than 0, and when it holds
-// none.
+// none. Each one's record id and grant type are kept as the vendor says
+// them, for spending it (zcode_resets.go).
 func zhipuResets(ctx context.Context, u, auth string, hdr map[string]string) *ResetCredits {
 	type reset struct {
-		Available bool `json:"available"`
-		Expire    any  `json:"expireTime"`
+		Available bool   `json:"available"`
+		Expire    any    `json:"expireTime"`
+		RecordID  any    `json:"recordId"`
+		Grant     string `json:"grantType"`
 	}
 	var data struct {
 		FiveHour []reset `json:"fiveHourResets"`
@@ -383,7 +386,7 @@ func zhipuResets(ctx context.Context, u, auth string, hdr map[string]string) *Re
 			if t != nil && (r.Until == nil || t.Before(*r.Until)) {
 				r.Until = t
 			}
-			r.Each = append(r.Each, ResetCard{Until: t, Window: window})
+			r.Each = append(r.Each, ResetCard{Until: t, Window: window, RecordID: x.RecordID, Grant: x.Grant})
 		}
 		return n
 	}

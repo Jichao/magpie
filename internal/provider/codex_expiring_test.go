@@ -39,7 +39,7 @@ func TestResetSpentBeforeItRunsOut(t *testing.T) {
 			e := expiringResets{next: map[string]time.Time{}}
 			spent := 0
 			out, err := e.check("Me@example.com", now, func() ([]QuotaWindow, *ResetCredits, error) { return c.windows, c.resets, nil },
-				func() (ResetOutcome, error) { spent++; return ResetOutcome{Code: "reset", Windows: 2}, nil })
+				func() (ResetOutcome, error) { spent++; return ResetOutcome{Code: "reset", Windows: 2}, nil }, false)
 			if err != nil || (spent == 1) != c.spend || (out.Code == "reset") != c.spend {
 				t.Fatalf("spent %d, %+v %v", spent, out, err)
 			}
@@ -49,7 +49,7 @@ func TestResetSpentBeforeItRunsOut(t *testing.T) {
 			// not read again before then
 			looked := false
 			e.check("me@example.com", now.Add(c.next-time.Second), func() ([]QuotaWindow, *ResetCredits, error) { looked = true; return nil, nil, nil },
-				func() (ResetOutcome, error) { t.Fatal("spent"); return ResetOutcome{}, nil })
+				func() (ResetOutcome, error) { t.Fatal("spent"); return ResetOutcome{}, nil }, false)
 			if looked {
 				t.Fatal("read again too soon")
 			}
@@ -63,14 +63,14 @@ func TestResetExpiryRetriesLater(t *testing.T) {
 	soon := now.Add(20 * time.Minute)
 	e := expiringResets{next: map[string]time.Time{}}
 	_, err := e.check("me@example.com", now, func() ([]QuotaWindow, *ResetCredits, error) { return nil, nil, http.ErrHandlerTimeout },
-		func() (ResetOutcome, error) { t.Fatal("spent"); return ResetOutcome{}, nil })
+		func() (ResetOutcome, error) { t.Fatal("spent"); return ResetOutcome{}, nil }, false)
 	if err == nil || e.next["me@example.com"].Sub(now) != resetExpiryWatch {
 		t.Fatalf("%v, next %v", err, e.next["me@example.com"].Sub(now))
 	}
 	e.next = map[string]time.Time{}
 	out, _ := e.check("me@example.com", now, func() ([]QuotaWindow, *ResetCredits, error) {
 		return []QuotaWindow{{Span: 5 * time.Hour, Used: 10}}, &ResetCredits{Count: 1, Until: &soon}, nil
-	}, func() (ResetOutcome, error) { return ResetOutcome{Code: "nothing_to_reset"}, nil })
+	}, func() (ResetOutcome, error) { return ResetOutcome{Code: "nothing_to_reset"}, nil }, false)
 	if out.Code != "nothing_to_reset" || e.next["me@example.com"].Sub(now) != resetExpiryClose {
 		t.Fatalf("%+v, next %v", out, e.next["me@example.com"].Sub(now))
 	}
@@ -263,7 +263,7 @@ func TestResetSpentAsLateAsSafe(t *testing.T) {
 					}
 					spent = now
 					return ResetOutcome{Code: "reset", Windows: 2}, nil
-				})
+				}, false)
 			}
 			if !spent.Equal(c.spent) {
 				t.Fatalf("spent at %v, want %v (looked at %v)", spent, c.spent, looks)
@@ -302,24 +302,24 @@ func TestResetExpiryLastHour(t *testing.T) {
 	e := expiringResets{next: map[string]time.Time{}}
 	// read once, not due yet
 	e.check("me@example.com", now, func() ([]QuotaWindow, *ResetCredits, error) { return used, &ResetCredits{Count: 1, Until: &until}, nil },
-		func() (ResetOutcome, error) { t.Fatal("spent early"); return ResetOutcome{}, nil })
+		func() (ResetOutcome, error) { t.Fatal("spent early"); return ResetOutcome{}, nil }, false)
 	// a failed read: again in five minutes, by the reset read before
 	now = now.Add(5 * time.Minute)
 	if _, err := e.check("me@example.com", now, func() ([]QuotaWindow, *ResetCredits, error) { return nil, nil, http.ErrHandlerTimeout },
-		func() (ResetOutcome, error) { return ResetOutcome{}, nil }); err == nil || e.next["me@example.com"].Sub(now) != resetExpiryClose {
+		func() (ResetOutcome, error) { return ResetOutcome{}, nil }, false); err == nil || e.next["me@example.com"].Sub(now) != resetExpiryClose {
 		t.Fatalf("failed read: %v, next in %v", err, e.next["me@example.com"].Sub(now))
 	}
 	// due, and the spend fails: again in five minutes
 	now = until.Add(-25 * time.Minute)
 	out, err := e.check("me@example.com", now, func() ([]QuotaWindow, *ResetCredits, error) { return used, &ResetCredits{Count: 1, Until: &until}, nil },
-		func() (ResetOutcome, error) { return ResetOutcome{}, http.ErrHandlerTimeout })
+		func() (ResetOutcome, error) { return ResetOutcome{}, http.ErrHandlerTimeout }, false)
 	if err == nil || out.Code != "" || e.next["me@example.com"].Sub(now) != resetExpiryClose {
 		t.Fatalf("failed spend: %+v %v, next in %v", out, err, e.next["me@example.com"].Sub(now))
 	}
 	// the Mac asleep past the lead: spent on the first look awake
 	now = until.Add(-3 * time.Minute)
 	if out, _ = e.check("me@example.com", now, func() ([]QuotaWindow, *ResetCredits, error) { return used, &ResetCredits{Count: 1, Until: &until}, nil },
-		func() (ResetOutcome, error) { return ResetOutcome{Code: "reset"}, nil }); out.Code != "reset" {
+		func() (ResetOutcome, error) { return ResetOutcome{Code: "reset"}, nil }, false); out.Code != "reset" {
 		t.Fatalf("after sleeping: %+v", out)
 	}
 }

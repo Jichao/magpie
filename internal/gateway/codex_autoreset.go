@@ -68,11 +68,20 @@ func (s *Server) autoResetSignedIn(ctx context.Context) (string, provider.ResetO
 }
 
 // autoResetOf spends one of agent's account user's resets if its rules
-// let it, and says whether the windows started again.
+// let it, and says whether the windows started again: a Codex account's
+// reset or a ZCode account's reset card (provider.AutoUseZcodeReset).
 func autoResetOf(ctx context.Context, agent, user string) (provider.ResetOutcome, bool) {
 	ctx, cancel := context.WithTimeout(ctx, autoResetTimeout)
 	defer cancel()
-	out, err := provider.AutoUseCodexReset(ctx, user)
+	var (
+		out provider.ResetOutcome
+		err error
+	)
+	if agent == "zcode" {
+		out, err = provider.AutoUseZcodeReset(ctx, user)
+	} else {
+		out, err = provider.AutoUseCodexReset(ctx, user)
+	}
 	switch {
 	case err != nil:
 		log.Printf("%s reset for %s not used: %v", agent, user, err)

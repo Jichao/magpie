@@ -15215,9 +15215,9 @@ function renderQuotas() {
       if (!brief && !history && sub.resets?.count) {
         const r = el("div", "quota-resets");
         r.append(resetsWords(sub.resets, sub));
-        // only Codex's are spent from here: a GLM team's are spent on
-        // bigmodel.cn, a plugin's wherever its vendor spends them
-        if (!sub.resets.byWindow && sub.provider === "codex") {
+        // Codex's resets and ZCode's reset cards are spent from here; a
+        // plugin's, wherever its vendor spends them
+        if (sub.provider === "codex" || sub.provider === "zcode") {
           const use = el("button", "text", t("Use a reset"));
           use.title = resetUseTitle(sub);
           use.onclick = () => askReset(sub);
@@ -16884,7 +16884,7 @@ function panelQuotaCard(q) {
   if (q.resets?.count) {
     const r = el("div", "pq-resets");
     r.append(resetsWords(q.resets, q));
-    if (!q.resets.byWindow && q.provider === "codex") { // as on the Usage page
+    if (q.provider === "codex" || q.provider === "zcode") { // as on the Usage page
       const use = el("button", "pq-use", t("Use one…"));
       use.title = resetUseTitle(q);
       use.onclick = () => askReset(q);
@@ -16939,9 +16939,9 @@ let panelOptsFolded = new Set();
 try { panelOptsFolded = new Set(JSON.parse(localStorage.getItem("magpie.panelOptsFolded") || "[]")); } catch {}
 
 // resetsWords: a Codex account's rate-limit resets, "↺ 2 resets · until
-// Sat 22:30", the date only when one of them runs out. A GLM Coding team
-// plan's are counted by window, "↺ 2 five-hour resets · 1 weekly reset",
-// and spent on the vendor's page, not here.
+// Sat 22:30", the date only when one of them runs out. A GLM Coding plan's
+// are counted by window, "↺ 2 five-hour resets · 1 weekly reset", and
+// spent here as Codex's are (zcode_resets.go).
 function resetsWords(r, q) {
   const w = el("span", "resets-words");
   if (r.byWindow) {
@@ -16950,11 +16950,19 @@ function resetsWords(r, q) {
     if (r.weekly) parts.push(t(r.weekly === 1 ? "1 weekly reset" : "{n} weekly resets", { n: r.weekly }));
     w.append(el("span", "resets-n", "↺ " + parts.join(" · ")));
     // a GLM Coding plan's resets, a team's or the person's own (#1191)
-    w.title = r.team ? t("The team plan's resets, used on bigmodel.cn or z.ai") : t("The plan's resets, used on bigmodel.cn or z.ai");
+    w.title = r.team ? t("The team plan's resets, spent here or on bigmodel.cn or z.ai") : t("The plan's resets, spent here or on bigmodel.cn or z.ai");
     if (r.until) {
       const at = new Date(r.until);
       w.append(el("span", "resets-until", " · " + t("until {when}", { when: resetClock(at) })));
       if (!r.each?.length) w.title += "\n" + t("The first runs out {when}", { when: at.toLocaleString(intlLang()) });
+      // whether the one that runs out first is kept from going to waste:
+      // with Auto-use on it is used shortly before it does (#624, #719)
+      if (q && q.provider === "zcode" && autoResetKept(q)) {
+        const on = autoResetWhen(q).expiring;
+        w.append(el("span", "resets-kept" + (on ? " on" : ""), " · " + t(on ? "auto-used before it expires" : "not auto-used")));
+        w.title += "\n" + t(on ? "Auto-use is on: the reset card that runs out first is used about half an hour before it does, if this account's windows have been used, and kept out of the peak the account avoids; at once if the account is held up until after then."
+          : "Auto-use is off: the reset card that runs out first is lost unless it's used by hand before then.");
+      }
     }
     if (r.each?.length) w.title += "\n" + resetsEach(r);
     return w;
@@ -17002,11 +17010,15 @@ function resetUseTitle(q) {
 // account's, kept by its name (settings' codexAutoReset, the CLI's quota
 // auto-reset): when its week is used up and no other account can answer,
 // one a week at most, and the one about to run out unused shortly before
-// it does. Off unless the user turns it on; nothing for an account with no
-// name to keep it by. autoResetKept: the accounts that can have it.
-const AUTO_RESET_KEPT = { codex: "codexAutoReset" };
+// it does. A ZCode account's is too (zcodeAutoReset): the card of a
+// window used up, and the one about to run out — and a third say, kept
+// out of the peak (zcodeAutoResetOffPeak). Off unless the user turns it
+// on; nothing for an account with no name to keep it by.
+// autoResetKept: the accounts that can have it.
+const AUTO_RESET_KEPT = { codex: "codexAutoReset", zcode: "zcodeAutoReset" };
+const AUTO_RESET_ONLY = { codex: "codexAutoResetOnly", zcode: "zcodeAutoResetOnly" };
 function autoResetKept(q) {
-  return !!(q.user && AUTO_RESET_KEPT[q.provider] && !q.resets?.byWindow);
+  return !!(q.user && AUTO_RESET_KEPT[q.provider]);
 }
 function autoResetOn(q) {
   const w = autoResetWhen(q);
@@ -17015,16 +17027,24 @@ function autoResetOn(q) {
 // autoResetWhen: at which of the two times the account uses one by itself,
 // each its own switch (#2078, alanwalk: Codex resets the week often enough
 // that a used-up week is worth waiting out, while a card about to run out
-// isn't); an account not kept to one (codexAutoResetOnly) uses one at both.
+// isn't); an account not kept to one (codexAutoResetOnly, or a ZCode
+// account's zcodeAutoResetOnly) uses one at both. peak is a ZCode
+// account's third say (zcodeAutoResetOffPeak): none spent during UTC+8
+// 2pm–6pm.
 function autoResetWhen(q) {
-  if (!autoResetKept(q) || !(state.settings?.[AUTO_RESET_KEPT[q.provider]] || []).includes(q.user.toLowerCase())) return { week: false, expiring: false };
-  return autoResetWhenOf(state.settings?.codexAutoResetOnly?.[q.user.toLowerCase()]);
+  const out = { week: false, expiring: false, peak: false };
+  const user = (q.user || "").toLowerCase();
+  if (!autoResetKept(q) || !(state.settings?.[AUTO_RESET_KEPT[q.provider]] || []).includes(user)) return out;
+  const only = state.settings?.[AUTO_RESET_ONLY[q.provider]]?.[user];
+  out.week = only !== "expiring";
+  out.expiring = only !== "week";
+  if (q.provider === "zcode") out.peak = (state.settings?.zcodeAutoResetOffPeak || []).includes(user);
+  return out;
 }
-function autoResetWhenOf(only) {
-  return { week: only !== "expiring", expiring: only !== "week" };
-}
-// AUTO_RESET_CASES: the two times, in the order they're shown, with their
-// words and what each switch's title says on and off.
+// AUTO_RESET_CASES: the says, in the order they're shown, with their
+// words and what each switch's title says on and off. The peak is a
+// ZCode account's only: none of its cards spent during UTC+8 2pm–6pm,
+// when usage counts whole against the plan instead of half.
 const AUTO_RESET_CASES = [
   { id: "week", say: "when its week runs out",
     on: "On: a reset is used by itself when this account's week is used up and no other account can answer, one a week at most. The five hours running out never uses one. Click to turn it off.",
@@ -17032,13 +17052,19 @@ const AUTO_RESET_CASES = [
   { id: "expiring", say: "before one expires",
     on: "On: the reset that runs out first is used about half an hour before it does, if this account's windows have been used, or at once when the account is held up until after then. Click to turn it off.",
     off: "Off: a reset that runs out unused is lost. Click to turn it on." },
+  { id: "peak", say: "none during the peak (2–6pm, UTC+8)", zcode: true,
+    on: "On: no reset card is spent during the peak, UTC+8 2pm to 6pm, when usage counts whole against the plan's windows instead of half — a card's fresh quota is worth half again outside it. One due inside the peak is spent at its start instead; one looked at inside it after it ends, and a card may run out inside it rather than be spent there. Click to turn it off.",
+    off: "Off: reset cards are spent whenever due, peak or not. Click to keep the peak clear." },
 ];
 // autoResetStatus says what the account does now, after a switch.
-function autoResetStatus(user, w) {
-  if (w.week && w.expiring) return t("{who} uses a reset by itself when its week runs out, or before one expires", { who: user });
-  if (w.week) return t("{who} uses a reset by itself only when its week runs out", { who: user });
-  if (w.expiring) return t("{who} uses a reset by itself only before one expires", { who: user });
-  return t("{who} no longer uses a reset by itself", { who: user });
+function autoResetStatus(user, w, zcode) {
+  let say;
+  if (w.week && w.expiring) say = t("{who} uses a reset by itself when its week runs out, or before one expires", { who: user });
+  else if (w.week) say = t("{who} uses a reset by itself only when its week runs out", { who: user });
+  else if (w.expiring) say = t("{who} uses a reset by itself only before one expires", { who: user });
+  else return t("{who} no longer uses a reset by itself", { who: user });
+  if (zcode && w.peak) say += t(", and none during the peak");
+  return say;
 }
 
 // autoResetRow is that say on an account's card, whether or not it holds a
@@ -17055,6 +17081,7 @@ function autoResetRow(q, cls) {
   const cases = el("div", "ar-cases");
   const w = autoResetWhen(q);
   for (const c of AUTO_RESET_CASES) {
+    if (c.zcode && q.provider !== "zcode") continue;
     const line = el("div", "ar-case" + (w[c.id] ? " on" : ""));
     line.dataset.case = c.id;
     const words = el("span", "ar-case-say", t(c.say));
@@ -17132,7 +17159,7 @@ function autoResetButton(q, c) {
     try {
       prefs = await writingPrefs(api("settings/" + q.provider + "-auto-reset", c ? { user: q.user, on: !on, when: c.id } : { user: q.user, on: !on }));
       state.settings = prefs;
-      status(autoResetStatus(q.user, autoResetWhen(q)), "ok");
+      status(autoResetStatus(q.user, autoResetWhen(q), q.provider === "zcode"), "ok");
       renderQuotas();
       if ($("#codexAutoResetRow")) renderAutoResetOwn(prefs); // Settings › Usage says the same
     } catch (err) {
@@ -17368,14 +17395,15 @@ function wbToday() {
   return new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 }
 
-// askReset: spending a Codex account's reset can't be taken
+// askReset: spending a Codex reset or a ZCode reset card can't be taken
 // back, so it asks first; then it says what came of it and reads the
 // usage again.
 let confirmAsk = null;
 function askReset(q) {
+  const zcode = q.provider === "zcode";
   const ed = el("div", "editor reset-ask");
   const head = el("div", "ehead");
-  head.append(icon(q.icon || "codex"), el("b", "", t("Use a Codex reset?")));
+  head.append(icon(q.icon || (zcode ? "zcode" : "codex")), el("b", "", t(zcode ? "Use a ZCode reset card?" : "Use a Codex reset?")));
   ed.append(head);
   const who = q.alias || q.user || q.name;
   ed.append(el("p", "lib-confirm", t(q.resets.count === 1
@@ -17391,12 +17419,12 @@ function askReset(q) {
     go.disabled = true;
     go.classList.add("busy");
     try {
-      const out = await api("usage/codex-reset", { user: q.user || "" });
+      const out = await api("usage/" + (zcode ? "zcode" : "codex") + "-reset", { user: q.user || "" });
       closeConfirmAsk();
       status(who + ": " + resetOutcome(out), out.code === "reset" ? "ok" : "err");
       // the providers' editor reads the account's windows and resets
       // on its own, kept a minute: read again, as Usage is (#1491)
-      delete loginUsage.codex;
+      delete loginUsage[zcode ? "zcode" : "codex"];
       if (editing && view === "providers") renderProviders();
       loadQuotas();
     } catch (err) {

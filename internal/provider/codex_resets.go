@@ -46,6 +46,12 @@ type ResetCredits struct {
 type ResetCard struct {
 	Until  *time.Time `json:"until,omitempty"`
 	Window string     `json:"window,omitempty"`
+	// RecordID and Grant are a Zhipu reset's own, as its list says them:
+	// what /api/biz/customer-package-reset/use is told to spend it
+	// (zcode_resets.go). A Codex reset has neither: it is spent by the
+	// credit id read when one is.
+	RecordID any    `json:"recordId,omitempty"`
+	Grant    string `json:"grantType,omitempty"`
 }
 
 // sortResetCards puts the resets in the order they run out, one that

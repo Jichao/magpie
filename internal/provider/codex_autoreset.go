@@ -60,29 +60,58 @@ func CodexAutoReset(user string) bool {
 }
 
 // AutoResets says whether agent's account user spends its resets by
-// itself at either time; only a Codex account does.
+// itself at either time; Codex and ZCode accounts do.
 func AutoResets(agent, user string) bool {
-	return agent == "codex" && CodexAutoReset(user)
+	switch agent {
+	case "codex":
+		return CodexAutoReset(user)
+	case "zcode":
+		return ZcodeAutoReset(user)
+	}
+	return false
 }
 
 // AutoResetsWeek says whether agent's account user spends a reset by itself
 // once its week is used up and no other account can answer.
 func AutoResetsWeek(agent, user string) bool {
-	week, _ := CodexAutoResetWhen(user)
-	return agent == "codex" && week
+	switch agent {
+	case "codex":
+		week, _ := CodexAutoResetWhen(user)
+		return week
+	case "zcode":
+		week, _, _ := ZcodeAutoResetWhen(user)
+		return week
+	}
+	return false
 }
 
 // autoResetsExpiring says whether agent's account user spends the reset
 // about to run out by itself.
 func autoResetsExpiring(agent, user string) bool {
-	_, expiring := CodexAutoResetWhen(user)
-	return agent == "codex" && expiring
+	switch agent {
+	case "codex":
+		_, expiring := CodexAutoResetWhen(user)
+		return expiring
+	case "zcode":
+		_, expiring, _ := ZcodeAutoResetWhen(user)
+		return expiring
+	}
+	return false
 }
 
 // AutoResetWords says in a few words when user spends one by itself, for
 // the CLI and TUI: "" when it never does.
-func AutoResetWords(user string) string {
-	switch week, expiring := CodexAutoResetWhen(user); {
+func AutoResetWords(agent, user string) string {
+	var week, expiring bool
+	switch agent {
+	case "codex":
+		week, expiring = CodexAutoResetWhen(user)
+	case "zcode":
+		week, expiring, _ = ZcodeAutoResetWhen(user)
+	default:
+		return ""
+	}
+	switch {
 	case week && expiring:
 		return "auto"
 	case week:

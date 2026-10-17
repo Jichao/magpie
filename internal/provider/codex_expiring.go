@@ -59,10 +59,12 @@ type expiringResets struct {
 // check spends one of user's resets, if its windows have been used, when
 // the soonest of them runs out within resetExpiryLead or the account is
 // held up past then (expiringResetSpent); look reads its windows and
-// resets, spend spends the one that runs out first. Code is "" when none
-// was tried. now is wall-clock time: a Mac asleep doesn't count it on the
-// monotonic clock, and the reset runs out by the wall clock.
-func (e *expiringResets) check(user string, now time.Time, look func() ([]QuotaWindow, *ResetCredits, error), spend func() (ResetOutcome, error)) (ResetOutcome, error) {
+// resets, spend spends the one that runs out first. peak keeps the spend
+// out of the Zhipu peak (zhipuSpentAt); Codex's own accounts pass false.
+// Code is "" when none was tried. now is wall-clock time: a Mac asleep
+// doesn't count it on the monotonic clock, and the reset runs out by the
+// wall clock.
+func (e *expiringResets) check(user string, now time.Time, look func() ([]QuotaWindow, *ResetCredits, error), spend func() (ResetOutcome, error), peak bool) (ResetOutcome, error) {
 	key := strings.ToLower(user)
 	now = now.Round(0)
 	e.Lock()
@@ -96,7 +98,11 @@ func (e *expiringResets) check(user string, now time.Time, look func() ([]QuotaW
 		return ResetOutcome{}, nil
 	}
 	q := SubscriptionQuota{Windows: windows}
-	at := expiringResetSpent(until, now, usedUp(q, now), BackAt(q, now))
+	spentAt := expiringResetSpent
+	if peak {
+		spentAt = zhipuSpentAt
+	}
+	at := spentAt(until, now, usedUp(q, now), BackAt(q, now))
 	if at.After(now) || !windowsUsed(windows) {
 		// not yet, or nothing to start again yet: the account may be used,
 		// or held up, before it runs out
@@ -148,7 +154,10 @@ func expiringResetSpent(until, now time.Time, stopped bool, back time.Time) time
 // resetRunsOut is when the reset an account will spend by itself before
 // it runs out does (check), for routing, which takes it for when its
 // windows start again by expiringResetSpent (Allowance.Restarts): what
-// they have left is lost then, as at their own reset (#717, #718). Zero unless agent's
+// they have left is lost then, as at their own reset (#717, #718). A
+// ZCode account kept off the peak may spend it later than that, its peak
+// over: routing then tries the account a touch soon, is told no, and
+// rests it again — noise, not a wrong answer. Zero unless agent's
 // account user is let spend the one about to run out (autoResetsExpiring), holds one that runs
 // out, and has used its windows — as check, which spends none on windows
 // with nothing to start again. Only holding a reset, auto-use off, is
@@ -212,7 +221,7 @@ func SpendExpiringCodexResets(ctx context.Context) {
 				return ResetOutcome{}, nil
 			}
 			return useCodexReset(ctx, who, ResetUsedExpiring)
-		})
+		}, false)
 		switch {
 		case err != nil:
 			log.Printf("codex reset about to run out: %s: %v", user, err)
@@ -245,7 +254,8 @@ func spendExpiringNow(windows []QuotaWindow, resets *ResetCredits, now time.Time
 }
 
 // KeepResetsFromRunningOut spends the Codex resets about to run out unused
-// (SpendExpiringCodexResets), three minutes after it starts and every
+// (SpendExpiringCodexResets) and the ZCode accounts' reset cards
+// (SpendExpiringZcodeResets), three minutes after it starts and every
 // resetExpiryClose after that, until ctx ends.
 func KeepResetsFromRunningOut(ctx context.Context) {
 	t := time.NewTimer(3 * time.Minute)
@@ -258,6 +268,7 @@ func KeepResetsFromRunningOut(ctx context.Context) {
 		}
 		c, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		SpendExpiringCodexResets(c)
+		SpendExpiringZcodeResets(c)
 		cancel()
 		t.Reset(resetExpiryClose)
 	}
