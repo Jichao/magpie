@@ -15215,9 +15215,11 @@ function renderQuotas() {
       if (!brief && !history && sub.resets?.count) {
         const r = el("div", "quota-resets");
         r.append(resetsWords(sub.resets, sub));
-        // Codex's resets and ZCode's reset cards are spent from here; a
-        // plugin's, wherever its vendor spends them
-        if (sub.provider === "codex" || sub.provider === "zcode") {
+        // Codex's resets and a GLM plan's own cards are spent from here; a
+        // GLM team's are spent on bigmodel.cn until a spend from a team
+        // member's sign-in is known to work; a plugin's, wherever its
+        // vendor spends them
+        if (sub.provider === "codex" || (sub.provider === "zcode" && !sub.resets.team)) {
           const use = el("button", "text", t("Use a reset"));
           use.title = resetUseTitle(sub);
           use.onclick = () => askReset(sub);
