@@ -23,7 +23,9 @@ var autoResetTimeout = 20 * time.Second
 // them sits out too. held are accounts left out as they won't spend their
 // credits (planned.held): they sit out, and are out of their allowance as
 // c is, so one of them may spend one after cands'. It says which account it
-// was and what spending did.
+// was and what spending did. A GLM Coding Plan behind a provider key
+// spends its reset cards the same way (provider.AutoUseZhipuReset), told
+// apart by its provider's id.
 func (s *Server) autoReset(ctx context.Context, cands []candidate, c candidate, held []candidate) (candidate, provider.ResetOutcome, bool) {
 	for _, x := range cands {
 		if x.restKey() == c.restKey() {
@@ -40,7 +42,20 @@ func (s *Server) autoReset(ctx context.Context, cands []candidate, c candidate, 
 	seen := map[string]bool{}
 	for _, x := range append(append([]candidate{c}, cands...), held...) {
 		a := x.p.Account
-		if a == nil || a.User == "" || seen[x.restKey()] || !provider.AutoResetsWeek(a.Agent, a.User) {
+		if a == nil {
+			// a provider key on a GLM Coding Plan, with no account
+			// sign-in: its card spends as an account's does
+			if id, ok := provider.ZhipuPlanIdentityOf(x.p); ok && !seen[x.restKey()] && provider.ZhipuAutoResetWeek(id) {
+				seen[x.restKey()] = true
+				if out, ok := autoResetZhipuOf(ctx, id); ok {
+					s.Unrest(x.restKey())
+					x.capped = nil // its windows started again: held no more
+					return x, out, true
+				}
+			}
+			continue
+		}
+		if a.User == "" || seen[x.restKey()] || !provider.AutoResetsWeek(a.Agent, a.User) {
 			continue
 		}
 		seen[x.restKey()] = true
@@ -91,6 +106,35 @@ func autoResetOf(ctx context.Context, agent, user string) (provider.ResetOutcome
 		log.Printf("%s reset for %s not used: %s", agent, user, out.Text())
 	}
 	return out, err == nil && out.Code == "reset"
+}
+
+// autoResetZhipuOf is autoResetOf for a GLM Coding Plan behind a
+// provider key: spends one of its reset cards if its rules let it, and
+// says whether the windows started again.
+func autoResetZhipuOf(ctx context.Context, id string) (provider.ResetOutcome, bool) {
+	ctx, cancel := context.WithTimeout(ctx, autoResetTimeout)
+	defer cancel()
+	out, err := provider.AutoUseZhipuReset(ctx, id)
+	switch {
+	case err != nil:
+		log.Printf("zhipu reset card for %s not used: %v", id, err)
+	case out.Code == "reset":
+		log.Printf("zhipu reset card used for %s, its window used up: %s", id, out.Text())
+	case out.Code != "":
+		log.Printf("zhipu reset card for %s not used: %s", id, out.Text())
+	}
+	return out, err == nil && out.Code == "reset"
+}
+
+// autoResetSay is who a pick that spent a reset is, and the agent or
+// provider that keeps it, for the trace's say of the spend: an account
+// by its user and agent, a GLM plan key by its identity and provider.
+func (c candidate) autoResetSay() (who, agent string) {
+	if a := c.p.Account; a != nil {
+		return a.User, a.Agent
+	}
+	id, _ := provider.ZhipuPlanIdentityOf(c.p)
+	return id, c.p.ID
 }
 
 // unhold moves the account c of a plan's left, held as it won't spend its

@@ -210,6 +210,25 @@ type Settings struct {
 	// start instead, one looked at inside it after it ends; a card may run
 	// out inside it rather than be spent there.
 	ZcodeAutoResetOffPeak []string `json:"zcodeAutoResetOffPeak,omitempty"`
+	// ZhipuAutoReset are the provider keys on a GLM Coding Plan (by the
+	// provider's id, with "/<key name>" when the provider holds more than
+	// one key) that spend one of the plan's reset cards by themselves, as
+	// a ZCode account's do (see provider.AutoUseZhipuReset): once a window
+	// that stops the plan is used up and no other candidate can take the
+	// request, the card of that window — at most one a window; and one
+	// about to run out unused half an hour before it does
+	// (provider.SpendExpiringZhipuResets).
+	ZhipuAutoReset []string `json:"zhipuAutoReset,omitempty"`
+	// ZhipuAutoResetOnly narrows a key in ZhipuAutoReset to one of those
+	// two times, as CodexAutoResetOnly does (#2078): "week" for a window
+	// used up only, "expiring" for the one about to run out only. A key
+	// not in it uses one at both.
+	ZhipuAutoResetOnly map[string]string `json:"zhipuAutoResetOnly,omitempty"`
+	// ZhipuAutoResetOffPeak are the provider keys (as ZhipuAutoReset names
+	// them) that spend no card during the peak, UTC+8 2pm to 6pm, as
+	// ZcodeAutoResetOffPeak keeps a ZCode account's clear: usage counts
+	// whole against the plan's windows then and half outside it.
+	ZhipuAutoResetOffPeak []string `json:"zhipuAutoResetOffPeak,omitempty"`
 	// WorkBuddyCheckin presses WorkBuddy's daily check-in (签到) for each
 	// signed-in WorkBuddy (China) account once a Beijing day, claiming the
 	// credits it gives while its event runs.
@@ -1369,6 +1388,24 @@ func save(s Settings, recording bool) error {
 		s.ZcodeAutoResetOffPeak[i] = strings.ToLower(u)
 	}
 	s.ZcodeAutoResetOffPeak = ids(s.ZcodeAutoResetOffPeak)
+	for i, u := range s.ZhipuAutoReset {
+		s.ZhipuAutoReset[i] = strings.ToLower(u)
+	}
+	s.ZhipuAutoReset = ids(s.ZhipuAutoReset)
+	only = map[string]string{}
+	for u, c := range s.ZhipuAutoResetOnly {
+		if u = strings.ToLower(u); (c == "week" || c == "expiring") && slices.Contains(s.ZhipuAutoReset, u) {
+			only[u] = c
+		}
+	}
+	s.ZhipuAutoResetOnly = nil
+	if len(only) > 0 {
+		s.ZhipuAutoResetOnly = only
+	}
+	for i, u := range s.ZhipuAutoResetOffPeak {
+		s.ZhipuAutoResetOffPeak[i] = strings.ToLower(u)
+	}
+	s.ZhipuAutoResetOffPeak = ids(s.ZhipuAutoResetOffPeak)
 	s.TrayUsage = ""
 	if len(s.TrayUsages) > 0 {
 		s.TrayUsage = s.TrayUsages[0]

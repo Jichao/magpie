@@ -349,4 +349,21 @@ func usageRoutes(mux *http.ServeMux, w Windows) {
 		}
 		writeJSON(rw, out)
 	})
+	// spends one of a GLM Coding Plan key's reset cards (a provider's key,
+	// not a signed-in account's); the one that runs out first, of any window
+	mux.HandleFunc("POST /api/usage/zhipu-reset", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ User string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		out, err := provider.UseZhipuReset(ctx, in.User, "")
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, out)
+	})
 }

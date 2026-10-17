@@ -254,8 +254,9 @@ func spendExpiringNow(windows []QuotaWindow, resets *ResetCredits, now time.Time
 }
 
 // KeepResetsFromRunningOut spends the Codex resets about to run out unused
-// (SpendExpiringCodexResets) and the ZCode accounts' reset cards
-// (SpendExpiringZcodeResets), three minutes after it starts and every
+// (SpendExpiringCodexResets), the ZCode accounts' reset cards
+// (SpendExpiringZcodeResets) and the GLM plan keys'
+// (SpendExpiringZhipuResets), three minutes after it starts and every
 // resetExpiryClose after that, until ctx ends.
 func KeepResetsFromRunningOut(ctx context.Context) {
 	t := time.NewTimer(3 * time.Minute)
@@ -269,6 +270,7 @@ func KeepResetsFromRunningOut(ctx context.Context) {
 		c, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		SpendExpiringCodexResets(c)
 		SpendExpiringZcodeResets(c)
+		SpendExpiringZhipuResets(c)
 		cancel()
 		t.Reset(resetExpiryClose)
 	}

@@ -108,6 +108,8 @@ func AutoResetWords(agent, user string) string {
 		week, expiring = CodexAutoResetWhen(user)
 	case "zcode":
 		week, expiring, _ = ZcodeAutoResetWhen(user)
+	case "zhipu":
+		week, expiring, _ = ZhipuAutoResetWhen(user)
 	default:
 		return ""
 	}

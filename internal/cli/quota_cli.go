@@ -191,10 +191,19 @@ func resetsCell(r *provider.ResetCredits, agent, user string) string {
 	if r.Until != nil {
 		cell += muted.Render(" until " + provider.ResetClock(*r.Until, time.Now()))
 	}
-	if agent == "codex" || agent == "zcode" {
-		if auto := provider.AutoResetWords(agent, user); auto != "" {
-			cell += muted.Render(" · " + auto)
+	autoAgent, autoUser := agent, user
+	if r.ByWindow && agent != "zcode" {
+		// a GLM Coding Plan behind a provider key, told from a ZCode
+		// account by its card: its says are kept by the provider's id,
+		// with the key's name when it holds more than one
+		autoAgent = "zhipu"
+		autoUser = agent
+		if user != "" {
+			autoUser += "/" + user
 		}
+	}
+	if auto := provider.AutoResetWords(autoAgent, autoUser); auto != "" {
+		cell += muted.Render(" · " + auto)
 	}
 	return cell
 }

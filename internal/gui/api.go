@@ -1244,6 +1244,11 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		in.ZcodeAutoReset = cur.ZcodeAutoReset
 		in.ZcodeAutoResetOnly = cur.ZcodeAutoResetOnly
 		in.ZcodeAutoResetOffPeak = cur.ZcodeAutoResetOffPeak
+		// and GLM Coding Plan keys (a provider's, no account sign-in),
+		// set on the Usage card as those are
+		in.ZhipuAutoReset = cur.ZhipuAutoReset
+		in.ZhipuAutoResetOnly = cur.ZhipuAutoResetOnly
+		in.ZhipuAutoResetOffPeak = cur.ZhipuAutoResetOffPeak
 		// and which of them spend their credits, set there too
 		in.CodexNoCredits = cur.CodexNoCredits
 		// and each Codex account's own daily warm-up (codex-warm-at below)
@@ -1698,6 +1703,35 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		set := func() error { return provider.SetZcodeAutoReset(in.User, in.On) }
 		if in.When != "" {
 			set = func() error { return provider.SetZcodeAutoResetCase(in.User, in.When, in.On) }
+		}
+		if err := set(); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
+	// a GLM Coding Plan key's (a provider's, not a signed-in account's)
+	// auto-use of its reset cards: at both times, or with When ("week",
+	// "expiring" or "peak") at that one alone, the others kept — peak
+	// keeping none spent during UTC+8 2pm–6pm. User is the provider's id,
+	// with "/<key name>" when the provider holds more than one key.
+	mux.HandleFunc("POST /api/settings/zhipu-auto-reset", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct {
+			User string
+			On   bool
+			When string
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		if strings.TrimSpace(in.User) == "" {
+			fail(rw, fmt.Errorf("which GLM plan key?"))
+			return
+		}
+		set := func() error { return provider.SetZhipuAutoReset(in.User, in.On) }
+		if in.When != "" {
+			set = func() error { return provider.SetZhipuAutoResetCase(in.User, in.When, in.On) }
 		}
 		if err := set(); err != nil {
 			fail(rw, err)

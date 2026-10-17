@@ -61,8 +61,8 @@ func resetsLedgerKey(agent, user string) string {
 // resetUseAgent is the agent that kept use: none says Codex's, as the
 // uses kept before the agent was in them are.
 func resetUseAgent(u ResetUse) string {
-	if u.Agent == "zcode" {
-		return "zcode"
+	if u.Agent == "zcode" || u.Agent == "zhipu" {
+		return u.Agent
 	}
 	return "codex"
 }

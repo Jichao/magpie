@@ -16886,7 +16886,7 @@ function panelQuotaCard(q) {
   if (q.resets?.count) {
     const r = el("div", "pq-resets");
     r.append(resetsWords(q.resets, q));
-    if (q.provider === "codex" || q.provider === "zcode") { // as on the Usage page
+    if (q.provider === "codex" || q.provider === "zcode" || autoResetFamily(q) === "zhipu") { // as on the Usage page
       const use = el("button", "pq-use", t("Use one…"));
       use.title = resetUseTitle(q);
       use.onclick = () => askReset(q);
@@ -16959,7 +16959,7 @@ function resetsWords(r, q) {
       if (!r.each?.length) w.title += "\n" + t("The first runs out {when}", { when: at.toLocaleString(intlLang()) });
       // whether the one that runs out first is kept from going to waste:
       // with Auto-use on it is used shortly before it does (#624, #719)
-      if (q && q.provider === "zcode" && autoResetKept(q)) {
+      if (q && AUTO_RESET_PEAK[autoResetFamily(q)] && autoResetKept(q)) {
         const on = autoResetWhen(q).expiring;
         w.append(el("span", "resets-kept" + (on ? " on" : ""), " · " + t(on ? "auto-used before it expires" : "not auto-used")));
         w.title += "\n" + t(on ? "Auto-use is on: the reset card that runs out first is used about half an hour before it does, if this account's windows have been used, and kept out of the peak the account avoids; at once if the account is held up until after then."
@@ -17015,12 +17015,33 @@ function resetUseTitle(q) {
 // it does. A ZCode account's is too (zcodeAutoReset): the card of a
 // window used up, and the one about to run out — and a third say, kept
 // out of the peak (zcodeAutoResetOffPeak). Off unless the user turns it
-// on; nothing for an account with no name to keep it by.
-// autoResetKept: the accounts that can have it.
-const AUTO_RESET_KEPT = { codex: "codexAutoReset", zcode: "zcodeAutoReset" };
-const AUTO_RESET_ONLY = { codex: "codexAutoResetOnly", zcode: "zcodeAutoResetOnly" };
+// on; nothing for an account with no name to keep it by. A GLM Coding
+// Plan behind a provider key has the same says (zhipuAutoReset…), kept
+// by the key's identity: the provider's id, with the key's name when it
+// holds more than one.
+// autoResetKept: the accounts and keys that can have it.
+const AUTO_RESET_KEPT = { codex: "codexAutoReset", zcode: "zcodeAutoReset", zhipu: "zhipuAutoReset" };
+const AUTO_RESET_ONLY = { codex: "codexAutoResetOnly", zcode: "zcodeAutoResetOnly", zhipu: "zhipuAutoResetOnly" };
+// AUTO_RESET_PEAK: the GLM plans, whose keys and accounts can keep the
+// UTC+8 2–6pm peak clear of spends (settings' *AutoResetOffPeak).
+const AUTO_RESET_PEAK = { zcode: "zcodeAutoResetOffPeak", zhipu: "zhipuAutoResetOffPeak" };
+// autoResetFamily: the kind of card it is that can spend resets by
+// itself: a Codex or ZCode account, or a provider key on a GLM Coding
+// Plan, which its card says by the plan's cards counted by window.
+function autoResetFamily(q) {
+  if (q.user && AUTO_RESET_KEPT[q.provider]) return q.provider;
+  if (!q.user && q.resets?.byWindow && q.provider !== "zcode") return "zhipu";
+  return null;
+}
+// autoResetID: the card's identity in the settings: an account's user,
+// a GLM plan key's provider id, with the key's name when the provider
+// holds more than one key (as its card is named).
+function autoResetID(q) {
+  if (q.user && AUTO_RESET_KEPT[q.provider]) return q.user;
+  return q.user ? q.provider + "/" + q.user : q.provider;
+}
 function autoResetKept(q) {
-  return !!(q.user && AUTO_RESET_KEPT[q.provider]);
+  return !!autoResetFamily(q);
 }
 function autoResetOn(q) {
   const w = autoResetWhen(q);
@@ -17035,12 +17056,13 @@ function autoResetOn(q) {
 // 2pm–6pm.
 function autoResetWhen(q) {
   const out = { week: false, expiring: false, peak: false };
-  const user = (q.user || "").toLowerCase();
-  if (!autoResetKept(q) || !(state.settings?.[AUTO_RESET_KEPT[q.provider]] || []).includes(user)) return out;
-  const only = state.settings?.[AUTO_RESET_ONLY[q.provider]]?.[user];
+  const fam = autoResetFamily(q);
+  const id = (autoResetID(q) || "").toLowerCase();
+  if (!fam || !(state.settings?.[AUTO_RESET_KEPT[fam]] || []).includes(id)) return out;
+  const only = state.settings?.[AUTO_RESET_ONLY[fam]]?.[id];
   out.week = only !== "expiring";
   out.expiring = only !== "week";
-  if (q.provider === "zcode") out.peak = (state.settings?.zcodeAutoResetOffPeak || []).includes(user);
+  if (AUTO_RESET_PEAK[fam]) out.peak = (state.settings?.[AUTO_RESET_PEAK[fam]] || []).includes(id);
   return out;
 }
 // AUTO_RESET_CASES: the says, in the order they're shown, with their
@@ -17083,7 +17105,7 @@ function autoResetRow(q, cls) {
   const cases = el("div", "ar-cases");
   const w = autoResetWhen(q);
   for (const c of AUTO_RESET_CASES) {
-    if (c.zcode && q.provider !== "zcode") continue;
+    if (c.zcode && !AUTO_RESET_PEAK[autoResetFamily(q)]) continue;
     const line = el("div", "ar-case" + (w[c.id] ? " on" : ""));
     line.dataset.case = c.id;
     const words = el("span", "ar-case-say", t(c.say));
@@ -17091,7 +17113,7 @@ function autoResetRow(q, cls) {
     line.append(words, autoResetButton(q, c));
     cases.append(line);
   }
-  row.dataset.user = q.user;
+  row.dataset.user = autoResetID(q);
   row.append(say, cases);
   return row;
 }
@@ -17159,9 +17181,10 @@ function autoResetButton(q, c) {
     if (b.disabled) return;
     b.disabled = true;
     try {
-      prefs = await writingPrefs(api("settings/" + q.provider + "-auto-reset", c ? { user: q.user, on: !on, when: c.id } : { user: q.user, on: !on }));
+      const fam = autoResetFamily(q), id = autoResetID(q);
+      prefs = await writingPrefs(api("settings/" + fam + "-auto-reset", c ? { user: id, on: !on, when: c.id } : { user: id, on: !on }));
       state.settings = prefs;
-      status(autoResetStatus(q.user, autoResetWhen(q), q.provider === "zcode"), "ok");
+      status(autoResetStatus(id, autoResetWhen(q), AUTO_RESET_PEAK[fam]), "ok");
       renderQuotas();
       if ($("#codexAutoResetRow")) renderAutoResetOwn(prefs); // Settings › Usage says the same
     } catch (err) {
@@ -17402,10 +17425,11 @@ function wbToday() {
 // usage again.
 let confirmAsk = null;
 function askReset(q) {
-  const zcode = q.provider === "zcode";
+  const fam = autoResetFamily(q) === "zhipu" ? "zhipu" : q.provider === "zcode" ? "zcode" : "codex";
+  const zcode = fam === "zcode";
   const ed = el("div", "editor reset-ask");
   const head = el("div", "ehead");
-  head.append(icon(q.icon || (zcode ? "zcode" : "codex")), el("b", "", t(zcode ? "Use a ZCode reset card?" : "Use a Codex reset?")));
+  head.append(icon(q.icon || fam), el("b", "", t(zcode ? "Use a ZCode reset card?" : fam === "zhipu" ? "Use a reset" : "Use a Codex reset?")));
   ed.append(head);
   const who = q.alias || q.user || q.name;
   ed.append(el("p", "lib-confirm", t(q.resets.count === 1
@@ -17421,12 +17445,12 @@ function askReset(q) {
     go.disabled = true;
     go.classList.add("busy");
     try {
-      const out = await api("usage/" + (zcode ? "zcode" : "codex") + "-reset", { user: q.user || "" });
+      const out = await api("usage/" + fam + "-reset", { user: fam === "zhipu" ? autoResetID(q) : q.user || "" });
       closeConfirmAsk();
       status(who + ": " + resetOutcome(out), out.code === "reset" ? "ok" : "err");
       // the providers' editor reads the account's windows and resets
       // on its own, kept a minute: read again, as Usage is (#1491)
-      delete loginUsage[zcode ? "zcode" : "codex"];
+      if (fam !== "zhipu") delete loginUsage[fam];
       if (editing && view === "providers") renderProviders();
       loadQuotas();
     } catch (err) {

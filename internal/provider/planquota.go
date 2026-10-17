@@ -709,12 +709,15 @@ func PlanQuotas(ctx context.Context) []SubscriptionQuota {
 				k.Key = j.key
 				noteKeyAllowance(k, ws, time.Now())
 				if strings.HasSuffix(j.src.url, "/api/monitor/usage/quota/limit") && !team { // Zhipu, Z.ai
-					// the plan's term and its resets (#1191), asked together
+					// the plan's term and its resets (#1191), asked together;
+					// the resets this key's card says magpie spent too
+					// (zhipu_resets.go), as an account's card does
 					root := zcodeRoot(j.src.url)
 					resets := make(chan *ResetCredits, 1)
 					go func() { resets <- zhipuPersonalResets(ctx, root, j.key) }()
 					q.Until, q.Renew = zhipuTerm(ctx, root, j.key)
 					q.Resets = <-resets
+					q.ResetsUsed = ResetsUsed("zhipu", zhipuKeyIdentity(j.p, j.key))
 				}
 			}
 			q = keepReading(ctx, q, tag)
