@@ -966,7 +966,9 @@ function routingPage(part) {
     // a Codex reset spent by itself: with Codex's own sign-in the one try
     // it was spent for is the one that then answered
     const spent = tr.reset && tr.status < 400
-      ? t("Its week was used up, so one of {account}'s Codex resets was used by itself first.", { account: tr.reset.who }) + " "
+      ? t(tr.reset.agent === "zcode"
+        ? "Its window was used up, so one of {account}'s ZCode reset cards was used by itself first."
+        : "Its week was used up, so one of {account}'s Codex resets was used by itself first.", { account: tr.reset.who }) + " "
       : "";
     if (tr.status < 400 && tr.fail)
       return tr.rest
@@ -980,7 +982,9 @@ function routingPage(part) {
         : t("{who} answered in {ms}{tk}.", { who: name, ms: took(tr.ms), tk }));
     }
     if (tr.reset)
-      return t("{who} answered {status}: its week is used up and nobody else could take the request, so one of {account}'s Codex resets was used by itself and the request is asked again, before any of the reply reaches {agent}.",
+      return t(tr.reset.agent === "zcode"
+        ? "{who} answered {status}: its window is used up and nobody else could take the request, so one of {account}'s ZCode reset cards was used by itself and the request is asked again, before any of the reply reaches {agent}."
+        : "{who} answered {status}: its week is used up and nobody else could take the request, so one of {account}'s Codex resets was used by itself and the request is asked again, before any of the reply reaches {agent}.",
         { who: name, status: tr.status, account: tr.reset.who, agent });
     if (tr.fail === "canceled")
       return t("{agent} canceled the request while {who} was answering: nobody failed, so nobody rests and nobody else is asked.", { who: name, agent });
