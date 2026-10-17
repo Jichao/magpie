@@ -17023,7 +17023,7 @@ function resetUseTitle(q) {
 const AUTO_RESET_KEPT = { codex: "codexAutoReset", zcode: "zcodeAutoReset", zhipu: "zhipuAutoReset" };
 const AUTO_RESET_ONLY = { codex: "codexAutoResetOnly", zcode: "zcodeAutoResetOnly", zhipu: "zhipuAutoResetOnly" };
 // AUTO_RESET_PEAK: the GLM plans, whose keys and accounts can keep the
-// UTC+8 2–6pm peak clear of spends (settings' *AutoResetOffPeak).
+// workday UTC+8 2–6pm peak clear of spends (settings' *AutoResetOffPeak).
 const AUTO_RESET_PEAK = { zcode: "zcodeAutoResetOffPeak", zhipu: "zhipuAutoResetOffPeak" };
 // autoResetFamily: the kind of card it is that can spend resets by
 // itself: a Codex or ZCode account, or a provider key on a GLM Coding
@@ -17076,8 +17076,8 @@ const AUTO_RESET_CASES = [
   { id: "expiring", say: "before one expires",
     on: "On: the reset that runs out first is used about half an hour before it does, if this account's windows have been used, or at once when the account is held up until after then. Click to turn it off.",
     off: "Off: a reset that runs out unused is lost. Click to turn it on." },
-  { id: "peak", say: "none during the peak (2–6pm, UTC+8)", zcode: true,
-    on: "On: no reset card is spent during the peak, UTC+8 2pm to 6pm, when usage counts whole against the plan's windows instead of half — a card's fresh quota is worth half again outside it. One due inside the peak is spent at its start instead; one looked at inside it after it ends, and a card may run out inside it rather than be spent there. Click to turn it off.",
+  { id: "peak", say: "none during the peak (workdays 2–6pm, UTC+8)", zcode: true,
+    on: "On: no reset card is spent during the peak, workdays UTC+8 2pm to 6pm, when usage counts whole against the plan's windows instead of half — a card's fresh quota goes twice as far outside it. One due inside the peak is spent at its start instead; one looked at inside it after it ends, and a card may run out inside it rather than be spent there. Click to turn it off.",
     off: "Off: reset cards are spent whenever due, peak or not. Click to keep the peak clear." },
 ];
 // autoResetStatus says what the account does now, after a switch.

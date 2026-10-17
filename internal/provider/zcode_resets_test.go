@@ -211,6 +211,19 @@ func TestZhipuSpentAtOutOfPeak(t *testing.T) {
 	if got := zhipuSpentAt(at(13, 30), at(12, 0), false, time.Time{}); !got.Equal(at(13, 0)) {
 		t.Fatalf("a spend due before the peak, pulled: %v", got)
 	}
+
+	// the peak is the workdays' alone: a weekend is off-peak all day
+	// (the vendor's page), so nothing is pulled or held then
+	sat := time.Date(2026, 10, 17, 15, 0, 0, 0, cst)
+	sun := time.Date(2026, 10, 18, 15, 0, 0, 0, cst)
+	mon := time.Date(2026, 10, 19, 15, 0, 0, 0, cst)
+	if inZhipuPeak(sat) || inZhipuPeak(sun) || !inZhipuPeak(mon) {
+		t.Fatalf("the peak's workdays: sat %v sun %v mon %v", inZhipuPeak(sat), inZhipuPeak(sun), inZhipuPeak(mon))
+	}
+	dueSat := time.Date(2026, 10, 17, 16, 30, 0, 0, cst)
+	if got := zhipuSpentAt(dueSat, time.Date(2026, 10, 17, 12, 0, 0, 0, cst), false, time.Time{}); !got.Equal(dueSat.Add(-resetExpiryLead)) {
+		t.Fatalf("a spend due on a Saturday, in the peak's hours, not pulled: %v", got)
+	}
 }
 
 // The says are kept by account, each its own switch, the peak one kept

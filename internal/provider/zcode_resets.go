@@ -45,10 +45,12 @@ const ResetCasePeak = "peak"
 // whatever the computer's is.
 var zhipuZone = time.FixedZone("UTC+8", 8*3600)
 
-// inZhipuPeak says whether t falls inside the peak, UTC+8 2pm to 6pm.
+// inZhipuPeak says whether t falls inside the peak, workdays UTC+8 2pm
+// to 6pm (the vendor's page: outside it credits count half, weekends all
+// day), so a spend's fresh quota goes twice as far there.
 func inZhipuPeak(t time.Time) bool {
-	h := t.In(zhipuZone).Hour()
-	return h >= 14 && h < 18
+	t = t.In(zhipuZone)
+	return t.Weekday() >= time.Monday && t.Weekday() <= time.Friday && t.Hour() >= 14 && t.Hour() < 18
 }
 
 // zhipuPeakStart is when the peak t falls in began.

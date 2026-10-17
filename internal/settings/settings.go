@@ -203,7 +203,7 @@ type Settings struct {
 	// An account not in it uses one at both.
 	ZcodeAutoResetOnly map[string]string `json:"zcodeAutoResetOnly,omitempty"`
 	// ZcodeAutoResetOffPeak are the ZCode accounts (lower-case) that spend
-	// no card during the peak, UTC+8 2pm to 6pm: usage counts whole
+	// no card during the workday peak, UTC+8 2pm to 6pm: usage counts whole
 	// against the plan's windows then and half outside it, so a card's
 	// fresh quota is worth half again spent outside it (see
 	// provider.zhipuSpentAt). A spend due inside the peak is made at its
@@ -225,7 +225,7 @@ type Settings struct {
 	// not in it uses one at both.
 	ZhipuAutoResetOnly map[string]string `json:"zhipuAutoResetOnly,omitempty"`
 	// ZhipuAutoResetOffPeak are the provider keys (as ZhipuAutoReset names
-	// them) that spend no card during the peak, UTC+8 2pm to 6pm, as
+	// them) that spend no card during the workday peak, UTC+8 2pm to 6pm, as
 	// ZcodeAutoResetOffPeak keeps a ZCode account's clear: usage counts
 	// whole against the plan's windows then and half outside it.
 	ZhipuAutoResetOffPeak []string `json:"zhipuAutoResetOffPeak,omitempty"`
